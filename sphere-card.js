@@ -6,7 +6,7 @@
  * micro, sons, assistant, mot d'activation, zoom caméra, annonce vocale.
  * Style verre, thème clair/sombre automatique, éditeur visuel, textes en français.
  */
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
 
 /* === NUANCE COMMUNE v2 (cartes Johan854) === */
 const GV_NUANCES = [["braise", "Braise (rouge)", "#e0524f"], ["ocean", "Océan (bleu)", "#2f8fd8"], ["lagon", "Lagon (turquoise)", "#1fb5a8"], ["foret", "Forêt (vert)", "#3fae5a"], ["lavande", "Lavande (violet)", "#8a63d8"], ["framboise", "Framboise (rose)", "#e05597"], ["ambre", "Ambre (orange)", "#e8902c"], ["ardoise", "Ardoise (neutre)", "#7d8595"]];
@@ -50,6 +50,10 @@ const ETATS = {
   idle: ["Au repos", "mdi:sleep", "ok"], listening: ["Écoute", "mdi:microphone", "act"], processing: ["Réfléchit", "mdi:dots-horizontal-circle", "act"],
   responding: ["Répond", "mdi:account-voice", "act"], unavailable: ["Hors ligne", "mdi:lan-disconnect", "off"], unknown: ["Inconnu", "mdi:help-circle", "off"],
 };
+// Nuancier de la LED : [nom, [r, g, b]]
+const PALETTE = [["Rouge", [255, 40, 30]], ["Orange", [255, 120, 0]], ["Jaune", [255, 210, 0]], ["Vert", [40, 220, 60]], ["Turquoise", [0, 210, 190]],
+  ["Bleu", [30, 90, 255]], ["Violet", [140, 60, 255]], ["Rose", [255, 60, 170]], ["Blanc", [255, 255, 255]]];
+const hex = (rgb) => "#" + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
 const WAKE = { no_wake_word: "Aucun", Alexa: "Alexa", "Hey Jarvis": "Hey Jarvis", "Okay Nabu": "Okay Nabu" };
 const ent = (p) => ({
   sat: `assist_satellite.${p}_satellite_assist`, mp: `media_player.${p}`, screen: `light.${p}_screen`, led: `light.${p}`,
@@ -71,7 +75,7 @@ class SphereCard extends HTMLElement {
   _ids(s) { const e = { ...ent(s.prefix), ...(s.entities || {}) }; return { e, list: [...Object.values(e), s.counter].filter(Boolean) }; }
   set hass(h) {
     this._hass = h; const c = this._config; if (!c) return;
-    const sig = this._ids(c).list.map((id) => { const st = h.states[id]; return st ? st.state + "|" + (st.attributes.brightness || "") + "|" + (st.attributes.volume_level || "") : "-"; }).join(",") + (h.themes && h.themes.darkMode);
+    const sig = this._ids(c).list.map((id) => { const st = h.states[id]; return st ? st.state + "|" + (st.attributes.brightness || "") + "|" + (st.attributes.volume_level || "") + "|" + (st.attributes.rgb_color || "") + "|" + (st.attributes.effect || "") : "-"; }).join(",") + (h.themes && h.themes.darkMode);
     if (sig !== this._sig && !this._busy) { this._sig = sig; this._render(); }
   }
   _isDark() {
@@ -95,6 +99,11 @@ class SphereCard extends HTMLElement {
     const bat = num(S(e.bat)), volt = num(S(e.volt)), wifi = num(S(e.wifi)), defis = num(S(e.defis)), stars = num(S(s.counter));
     const scr = S(e.screen), scrPct = scr && scr.state === "on" ? Math.round((scr.attributes.brightness || 0) / 2.55) : 0;
     const mp = S(e.mp), vol = mp && mp.attributes.volume_level != null ? Math.round(mp.attributes.volume_level * 100) : null;
+    const led = S(e.led), ledOn = led && led.state === "on", ledRgb = ledOn && Array.isArray(led.attributes.rgb_color) ? led.attributes.rgb_color : null;
+    const ledPct = ledOn ? Math.round((led.attributes.brightness || 0) / 2.55) : 0;
+    const ledFx = led && Array.isArray(led.attributes.effect_list) ? led.attributes.effect_list.filter((x) => x && x !== "None") : [];
+    const fxNom = { "Slow Pulse": "Pulsation lente", "Fast Pulse": "Pulsation rapide" };
+    const near = (a, b) => a && b && Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 60;
     const batCol = bat == null ? "var(--mu)" : bat <= 20 ? "#e0524f" : bat <= 40 ? "#e8902c" : "#3fae5a";
     const tog = (id, label, icon, invert) => { const x = S(id); if (!x) return ""; const v = invert ? x.state !== "on" : x.state === "on";
       return `<button class="tg ${v ? "on" : ""}" data-tog="${esc(id)}" aria-pressed="${v}" ${BAD.includes(x.state) ? "disabled" : ""}><ha-icon icon="${icon}"></ha-icon>${label}</button>`; };
@@ -125,6 +134,13 @@ class SphereCard extends HTMLElement {
       .rg .sw { width:38px; height:22px; border-radius:11px; border:1px solid var(--fib); background:var(--fi); position:relative; cursor:pointer; padding:0; }
       .rg .sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--mu); transition:left .15s; }
       .rg .sw.on { background:var(--ac); border-color:var(--ac); } .rg .sw.on::after { left:18px; background:#fff; }
+      .pal { display:flex; flex-wrap:wrap; gap:6px; padding-left:46px; }
+      .sw-c { width:27px; height:27px; border-radius:50%; border:2px solid var(--fib); cursor:pointer; padding:0; position:relative; display:inline-grid; place-items:center; box-shadow:inset 0 0 0 2px rgba(0,0,0,.15); }
+      .sw-c.sel { border-color:var(--tx); box-shadow:0 0 0 2px var(--ac); } .sw-c:disabled { opacity:.4; cursor:default; }
+      .sw-c.perso { background:conic-gradient(#f33,#fd0,#3d5,#0dc,#35f,#a3f,#f3a,#f33); overflow:hidden; } .sw-c.perso input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; border:0; padding:0; }
+      .sw-c.perso ha-icon { --mdc-icon-size:16px; color:#fff; pointer-events:none; filter:drop-shadow(0 0 2px #000); }
+      .cur { display:inline-block; width:.7em; height:.7em; border-radius:50%; vertical-align:middle; margin-left:.2em; border:1px solid var(--fib); }
+      @media (max-width:420px) { .pal { padding-left:0; } }
       .tgs { display:flex; flex-wrap:wrap; gap:6px; }
       .tg { font:inherit; font-size:.82em; font-weight:600; display:inline-flex; align-items:center; gap:.35em; min-height:38px; padding:.35em .85em; border-radius:2em; border:1px solid var(--fib); background:var(--fi); color:var(--mu); cursor:pointer; }
       .tg.on { background:color-mix(in srgb,var(--ac) 22%,transparent); border-color:var(--ac); color:var(--tx); } .tg ha-icon { --mdc-icon-size:1.15em; } .tg:disabled { opacity:.45; cursor:default; }
@@ -158,7 +174,9 @@ class SphereCard extends HTMLElement {
         <div class="lbl">Écran, son et lumière</div>
         ${scr ? `<div class="rg"><button class="sw ${scr.state === "on" ? "on" : ""}" data-tog="${esc(e.screen)}" aria-label="Écran allumé" aria-pressed="${scr.state === "on"}" ${off ? "disabled" : ""}></button><span class="nm">Écran</span><input type="range" min="5" max="100" step="5" value="${scrPct || 5}" data-bri="${esc(e.screen)}" aria-label="Luminosité de l'écran" ${off ? "disabled" : ""}><output>${scr.state === "on" ? scrPct + " %" : "éteint"}</output></div>` : ""}
         ${mp ? `<div class="rg"><ha-icon icon="mdi:volume-high"></ha-icon><span class="nm">Volume</span><input type="range" min="0" max="100" step="5" value="${vol != null ? vol : 0}" data-vol="${esc(e.mp)}" aria-label="Volume" ${off ? "disabled" : ""}><output>${vol != null ? vol + " %" : "—"}</output></div>` : ""}
-        ${S(e.led) ? `<div class="rg"><button class="sw ${on(e.led) ? "on" : ""}" data-tog="${esc(e.led)}" aria-label="LED" aria-pressed="${on(e.led)}" ${off ? "disabled" : ""}></button><span class="nm">LED</span><span></span><output>${on(e.led) ? "allumée" : "éteinte"}</output></div>` : ""}
+        ${led ? `<div class="rg"><button class="sw ${ledOn ? "on" : ""}" data-tog="${esc(e.led)}" aria-label="LED" aria-pressed="${ledOn}" ${off ? "disabled" : ""}></button><span class="nm">LED${ledRgb ? ` <i class="cur" style="background:${hex(ledRgb)}"></i>` : ""}</span><input type="range" min="5" max="100" step="5" value="${ledPct || 5}" data-bri="${esc(e.led)}" aria-label="Luminosité de la LED" ${off ? "disabled" : ""}><output>${ledOn ? ledPct + " %" : "éteinte"}</output></div>
+        <div class="pal" role="group" aria-label="Couleur de la LED">${PALETTE.map((p) => `<button class="sw-c ${near(ledRgb, p[1]) ? "sel" : ""}" style="background:${hex(p[1])}" data-rgb="${p[1].join(",")}" title="${p[0]}" aria-label="${p[0]}" ${off ? "disabled" : ""}></button>`).join("")}<label class="sw-c perso" title="Couleur personnalisée"><input type="color" value="${ledRgb ? hex(ledRgb) : "#8a63d8"}" data-pick="1" aria-label="Couleur personnalisée" ${off ? "disabled" : ""}><ha-icon icon="mdi:palette"></ha-icon></label></div>
+        ${ledFx.length ? `<div class="tgs">${ledFx.map((f) => `<button class="tg ${ledOn && led.attributes.effect === f ? "on" : ""}" data-fx="${esc(f)}" ${off ? "disabled" : ""}><ha-icon icon="mdi:pulse"></ha-icon>${esc(fxNom[f] || f)}</button>`).join("")}<button class="tg ${ledOn && (!led.attributes.effect || led.attributes.effect === "None") ? "on" : ""}" data-fx="None" ${off ? "disabled" : ""}><ha-icon icon="mdi:circle"></ha-icon>Fixe</button></div>` : ""}` : ""}
         <div class="tgs">
           ${tog(e.mute, "Micro", "mdi:microphone", true)}${tog(e.speaker, "Haut-parleur", "mdi:speaker")}${tog(e.wake, "Son de réveil", "mdi:bell-ring-outline")}${tog(e.startup, "Son de démarrage", "mdi:music-note")}${tog(e.text, "Texte à l'écran", "mdi:card-text-outline")}
         </div>
@@ -179,6 +197,13 @@ class SphereCard extends HTMLElement {
       inp.addEventListener("change", () => { fn(+inp.value); this._busy = false; this._sig = ""; });
     };
     r.querySelectorAll("[data-bri]").forEach((x) => slide(x, (v) => call("light", "turn_on", { entity_id: x.dataset.bri, brightness_pct: v }), (v) => v + " %"));
+    r.querySelectorAll("[data-rgb]").forEach((b) => b.addEventListener("click", () => call("light", "turn_on", { entity_id: e.led, rgb_color: b.dataset.rgb.split(",").map(Number), effect: "None" })));
+    r.querySelectorAll("[data-pick]").forEach((x) => {
+      x.addEventListener("focus", () => { this._busy = true; }); x.addEventListener("blur", () => { this._busy = false; });
+      x.addEventListener("change", () => { const v = x.value.replace("#", ""); this._busy = false; this._sig = "";
+        call("light", "turn_on", { entity_id: e.led, rgb_color: [0, 2, 4].map((i) => parseInt(v.substr(i, 2), 16)) }); });
+    });
+    r.querySelectorAll("[data-fx]").forEach((b) => b.addEventListener("click", () => call("light", "turn_on", { entity_id: e.led, effect: b.dataset.fx })));
     r.querySelectorAll("[data-vol]").forEach((x) => slide(x, (v) => call("media_player", "volume_set", { entity_id: x.dataset.vol, volume_level: v / 100 }), (v) => v + " %"));
     r.querySelectorAll("[data-cnt]").forEach((b) => b.addEventListener("click", () => call("counter", b.dataset.cnt, { entity_id: s.counter })));
     r.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => {

@@ -5,7 +5,8 @@ Carte Home Assistant pour suivre et régler les **sphères vocales ESPHome** des
 - une carte par sphère : état de l'assistant (au repos, écoute, réfléchit, répond, micro coupé, hors ligne) ;
 - personnage de la sphère, batterie (% et tension), signal Wi-Fi ;
 - défis réussis (avec remise à zéro confirmée) et histoires bonus (+ / − pour en offrir ou en retirer) ;
-- écran (marche/arrêt et luminosité), volume, LED ;
+- écran (marche/arrêt et luminosité), volume ;
+- LED : marche/arrêt, luminosité, nuancier de 9 couleurs + couleur personnalisée, effets (fixe, pulsation lente ou rapide) ;
 - micro, haut-parleur, son de réveil, son de démarrage, texte à l'écran ;
 - assistant, mot d'activation, zoom caméra ;
 - message à annoncer sur la sphère.
